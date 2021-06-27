@@ -17,11 +17,14 @@
 
 #pragma once
 
-#include <QBuffer>
 #include <QAction>
+#include <QBuffer>
+#include <QThread>
 #include <QWidgetAction>
 #include <QSystemTrayIcon>
 #include <QStyledItemDelegate>
+#include <QPointer>
+
 #include <obs.hpp>
 #include <vector>
 #include <memory>
@@ -43,8 +46,6 @@
 #include <util/platform.h>
 #include <util/threading.h>
 #include <util/util.hpp>
-
-#include <QPointer>
 
 class QMessageBox;
 class QListWidgetItem;
@@ -245,6 +246,10 @@ private:
 	int previewX = 0, previewY = 0;
 	int previewCX = 0, previewCY = 0;
 	float previewScale = 0.0f;
+
+	bool autoStartBroadcast = true;
+	bool autoStopBroadcast = true;
+	bool broadcastActive = false;
 
 	ConfigFile basicConfig;
 
@@ -562,6 +567,10 @@ public slots:
 
 	void DisplayStreamStartError();
 
+#if YOUTUBE_ENABLED
+	void YouTubeActionDialogOk(const QString &id, const QString &key,
+				   bool autostart, bool autostop);
+#endif
 	void StartStreaming();
 	void StopStreaming();
 	void ForceStopStreaming();
@@ -652,6 +661,8 @@ private slots:
 	void TransitionStopped();
 	void TransitionFullyStopped();
 	void TriggerQuickTransition(int id);
+
+	void BroadcastButtonClicked();
 
 	void SetDeinterlacingMode();
 	void SetDeinterlacingOrder();
