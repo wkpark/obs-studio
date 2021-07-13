@@ -6130,7 +6130,7 @@ void OBSBasic::StartStreaming()
 		std::string key = obs_data_get_string(settings, "stream_id");
 		if (!key.empty()) {
 			ui->broadcastButton->setEnabled(false);
-			QThread *streamCheckThread = QThread::create([&, key] {
+			QThread *streamCheckThread = CreateQThread([this, key] {
 				YoutubeApiWrappers *apiYouTube(
 					dynamic_cast<YoutubeApiWrappers *>(
 						GetAuth()));
@@ -6156,8 +6156,10 @@ void OBSBasic::StartStreaming()
 						item["status"]["streamStatus"]
 							.string_value();
 					if (status == "active") {
-						ui->broadcastButton->setEnabled(
-							true);
+						QMetaObject::invokeMethod(
+							ui->broadcastButton,
+							"setEnabled",
+							Q_ARG(bool, true));
 						break;
 					} else
 						QThread::sleep(1);
