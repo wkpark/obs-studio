@@ -4461,6 +4461,13 @@ void OBSBasic::closeEvent(QCloseEvent *event)
 		return;
 	}
 
+	/* Also don't close the window if the youtube stream check is active */
+	if (youtubeStreamCheckThread) {
+		QTimer::singleShot(1000, this, SLOT(close()));
+		event->ignore();
+		return;
+	}
+
 	if (isVisible())
 		config_set_string(App()->GlobalConfig(), "BasicWindow",
 				  "geometry",
@@ -6054,6 +6061,57 @@ void OBSBasic::YouTubeActionDialogOk(const QString &id, const QString &key,
 }
 #endif
 
+void OBSBasic::YoutubeStreamCheck(const std::string &key)
+{
+	YoutubeApiWrappers *apiYouTube(
+		dynamic_cast<YoutubeApiWrappers *>(GetAuth()));
+	if (!apiYouTube) {
+		/* technically we should never get here -Jim */
+		QMetaObject::invokeMethod(this, "ForceStopStreaming",
+					  Qt::QueuedConnection);
+		youtubeStreamCheckThread->deleteLater();
+		blog(LOG_ERROR, "==========================================");
+		blog(LOG_ERROR, "%s: Uh, hey, we got here", __FUNCTION__);
+		blog(LOG_ERROR, "==========================================");
+		return;
+	}
+
+	int timeout = 0;
+	json11::Json json;
+	QString id = key.c_str();
+
+	for (;;) {
+		if (timeout == 14) {
+			QMetaObject::invokeMethod(this, "ForceStopStreaming",
+						  Qt::QueuedConnection);
+			break;
+		}
+
+		if (!apiYouTube->FindStream(id, json)) {
+			QMetaObject::invokeMethod(this,
+						  "DisplayStreamStartError",
+						  Qt::QueuedConnection);
+			QMetaObject::invokeMethod(this, "StopStreaming",
+						  Qt::QueuedConnection);
+			break;
+		}
+
+		auto item = json["items"][0];
+		auto status = item["status"]["streamStatus"].string_value();
+		if (status == "active") {
+			QMetaObject::invokeMethod(ui->broadcastButton,
+						  "setEnabled",
+						  Q_ARG(bool, true));
+			break;
+		} else {
+			QThread::sleep(1);
+			timeout++;
+		}
+	}
+
+	youtubeStreamCheckThread->deleteLater();
+}
+
 void OBSBasic::StartStreaming()
 {
 	if (outputHandler->StreamingActive())
@@ -6065,29 +6123,26 @@ void OBSBasic::StartStreaming()
 	if (auth) {
 		auth->OnStreamConfig();
 #if YOUTUBE_ENABLED
-		if (!broadcastActive && autoStartBroadcast) {
-			if (IsYouTubeService(auth->service())) {
-				OBSYoutubeActions *dialog;
-				dialog = new OBSYoutubeActions(this, auth);
-				connect(dialog, &OBSYoutubeActions::ok, this,
-					&OBSBasic::YouTubeActionDialogOk);
-				int result = dialog->Valid()
-						     ? dialog->exec()
+		if (!broadcastActive && autoStartBroadcast &&
+		    IsYouTubeService(auth->service())) {
+			OBSYoutubeActions *dialog;
+			dialog = new OBSYoutubeActions(this, auth);
+			connect(dialog, &OBSYoutubeActions::ok, this,
+				&OBSBasic::YouTubeActionDialogOk);
+			int result = dialog->Valid() ? dialog->exec()
 						     : QDialog::Rejected;
-				if (result != QDialog::Accepted) {
-					ui->streamButton->setText(QTStr(
-						"Basic.Main.StartStreaming"));
-					ui->streamButton->setEnabled(true);
-					ui->streamButton->setChecked(false);
+			if (result != QDialog::Accepted) {
+				ui->streamButton->setText(
+					QTStr("Basic.Main.StartStreaming"));
+				ui->streamButton->setEnabled(true);
+				ui->streamButton->setChecked(false);
 
-					if (sysTrayStream) {
-						sysTrayStream->setText(
-							ui->streamButton
-								->text());
-						sysTrayStream->setEnabled(true);
-					}
-					return;
+				if (sysTrayStream) {
+					sysTrayStream->setText(
+						ui->streamButton->text());
+					sysTrayStream->setEnabled(true);
 				}
+				return;
 			}
 		}
 #endif
@@ -6128,46 +6183,13 @@ void OBSBasic::StartStreaming()
 		obs_service_t *service_obj = GetService();
 		obs_data_t *settings = obs_service_get_settings(service_obj);
 		std::string key = obs_data_get_string(settings, "stream_id");
-		if (!key.empty()) {
+		if (!key.empty() && !youtubeStreamCheckThread) {
 			ui->broadcastButton->setEnabled(false);
-			QThread *streamCheckThread = CreateQThread([this, key] {
-				YoutubeApiWrappers *apiYouTube(
-					dynamic_cast<YoutubeApiWrappers *>(
-						GetAuth()));
-				if (!apiYouTube)
-					return;
-
-				json11::Json json;
-				QString id = key.c_str();
-				while (true) {
-					if (!apiYouTube->FindStream(id, json)) {
-						QMetaObject::invokeMethod(
-							this,
-							"DisplayStreamStartError",
-							Qt::QueuedConnection);
-						QMetaObject::invokeMethod(
-							this, "StopStreaming",
-							Qt::QueuedConnection);
-						return;
-					}
-
-					auto item = json["items"][0];
-					auto status =
-						item["status"]["streamStatus"]
-							.string_value();
-					if (status == "active") {
-						QMetaObject::invokeMethod(
-							ui->broadcastButton,
-							"setEnabled",
-							Q_ARG(bool, true));
-						break;
-					} else
-						QThread::sleep(1);
-				}
-			});
-			streamCheckThread->setObjectName(
-				"StreamCheckThread"); // name to appear in ps, task manager, etc.
-			streamCheckThread->start();
+			youtubeStreamCheckThread = CreateQThread(
+				[this, key] { YoutubeStreamCheck(key); });
+			youtubeStreamCheckThread->setObjectName(
+				"YouTubeStreamCheckThread");
+			youtubeStreamCheckThread->start();
 		}
 #endif
 	} else if (!autoStopBroadcast) {

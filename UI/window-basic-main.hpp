@@ -561,6 +561,9 @@ private:
 	void MoveSceneItem(enum obs_order_movement movement,
 			   const QString &action_name);
 
+	QPointer<QThread> youtubeStreamCheckThread;
+	void YoutubeStreamCheck(const std::string &key);
+
 public slots:
 	void DeferSaveBegin();
 	void DeferSaveEnd();
