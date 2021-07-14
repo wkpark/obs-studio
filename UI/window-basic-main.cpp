@@ -4461,12 +4461,14 @@ void OBSBasic::closeEvent(QCloseEvent *event)
 		return;
 	}
 
+#if YOUTUBE_ENABLED
 	/* Also don't close the window if the youtube stream check is active */
 	if (youtubeStreamCheckThread) {
 		QTimer::singleShot(1000, this, SLOT(close()));
 		event->ignore();
 		return;
 	}
+#endif
 
 	if (isVisible())
 		config_set_string(App()->GlobalConfig(), "BasicWindow",
@@ -6059,7 +6061,6 @@ void OBSBasic::YouTubeActionDialogOk(const QString &id, const QString &key,
 	autoStartBroadcast = autostart;
 	autoStopBroadcast = autostop;
 }
-#endif
 
 void OBSBasic::YoutubeStreamCheck(const std::string &key)
 {
@@ -6111,6 +6112,7 @@ void OBSBasic::YoutubeStreamCheck(const std::string &key)
 
 	youtubeStreamCheckThread->deleteLater();
 }
+#endif
 
 void OBSBasic::StartStreaming()
 {
